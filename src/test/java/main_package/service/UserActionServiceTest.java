@@ -112,6 +112,7 @@ class UserActionServiceTest {
 
   @Test
   public void testGetUserByIdFail() {
-    assertThrows(RuntimeException.class, () -> userActionService.getActionById(UUID.randomUUID()));
+    List<Row> userAudit = userActionService.getActionById(UUID.randomUUID());
+    assertEquals(0, userAudit.size());
   }
 }
