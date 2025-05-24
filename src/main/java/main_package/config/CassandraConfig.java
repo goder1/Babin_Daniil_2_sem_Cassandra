@@ -12,7 +12,9 @@ import java.time.Duration;
 import java.util.Map;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.cassandra.repository.config.EnableCassandraRepositories;
 
+@EnableCassandraRepositories
 @Configuration
 public class CassandraConfig {
   @Bean

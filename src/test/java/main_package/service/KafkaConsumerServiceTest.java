@@ -5,6 +5,7 @@ import com.datastax.oss.driver.api.core.cql.Row;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.channel.ChannelOutboundBuffer;
+import main_package.config.CassandraConfig;
 import main_package.model.UserAction;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,8 +19,10 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.containers.CassandraContainer;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.wait.strategy.LogMessageWaitStrategy;
@@ -40,17 +43,26 @@ import static org.testcontainers.shaded.org.awaitility.Awaitility.await;
 
 
 @SpringBootTest(
-    classes = {KafkaConsumerService.class},
+    classes = {
+        KafkaConsumerService.class,
+        UserActionService.class,
+        CassandraConfig.class
+    },
     properties = {
         "topic-to-consume-message=my-topic",
         "spring.kafka.consumer.group-id=my-topic-group"
     }
 )
-
+@EmbeddedKafka(topics = "${topic-to-consume-message}", bootstrapServersProperty = "spring.kafka.bootstrap-servers")
+@TestPropertySource(properties = {
+    "topic-to-consume-message=my-topic",
+    "spring.kafka.consumer.group-id=my-topic-group",
+    "spring.kafka.bootstrap-servers=localhost:9092"
+})
 @Import({KafkaAutoConfiguration.class, KafkaConsumerServiceTest.ObjectMapperTestConfig.class})
 @Testcontainers
 class KafkaConsumerServiceTest {
-  @Autowired
+  @MockBean
   public UserActionService userActionService;
 
   @Container
@@ -63,6 +75,7 @@ class KafkaConsumerServiceTest {
           .withEnv("JVM_EXTRA_OPTS",
               "-Dcassandra.skip_wait_for_gossip_to_settle=0 " +
                   "-Dcassandra.initial_token=0")
+          .withInitScript("init.cql")
           .waitingFor(new LogMessageWaitStrategy()
               .withRegEx(".*Startup complete.*\\s")
               .withTimes(1)
@@ -118,7 +131,7 @@ class KafkaConsumerServiceTest {
 
   @Container
   @ServiceConnection
-  public static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.4.0"));
+  public static final KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.0.1"));
 
   @Autowired
   private KafkaTemplate<String, String> kafkaTemplate;
@@ -132,16 +145,6 @@ class KafkaConsumerServiceTest {
   @MockBean
   private ChannelOutboundBuffer.MessageProcessor messageProcessor;
 
-  @Container
-  private static final KafkaContainer kafka = new KafkaContainer(
-      DockerImageName.parse("confluentinc/cp-kafka:latest"));
-
-  @Container
-  private static final CassandraContainer<?> cassandra = new CassandraContainer<>(
-      DockerImageName.parse("cassandra:latest"))
-      .withInitScript("cql/db-schema.cql")
-      .withExposedPorts(9042);
-
   @DynamicPropertySource
   static void overrideProperties(DynamicPropertyRegistry registry) {
     registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
@@ -150,7 +153,7 @@ class KafkaConsumerServiceTest {
   @BeforeEach
   void setUp() {
     await().atMost(Duration.ofSeconds(2))
-        .until(() -> kafka.isRunning() && cassandra.isRunning());
+        .until(() -> kafka.isRunning() && cassandraContainer.isRunning());
   }
 
   @Test
